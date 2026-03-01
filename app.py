@@ -299,7 +299,7 @@ menu = st.sidebar.selectbox(
 )
 
 # ==========================================================
-# NEW SCREENING – PROTOCOL VERSION
+# NEW SCREENING – PROTOCOL VERSION (FINAL SAFE)
 # ==========================================================
 
 if menu == "New Screening":
@@ -308,6 +308,9 @@ if menu == "New Screening":
 
     col1, col2 = st.columns(2)
 
+    # -------------------------
+    # INPUTS
+    # -------------------------
     with col1:
         patient_name = st.text_input("Patient Name")
         age = st.number_input("Age", 20, 100)
@@ -332,8 +335,14 @@ if menu == "New Screening":
         us_dilation = st.checkbox("Bile Duct Dilation")
         us_mass = st.checkbox("Liver Mass Detected")
 
+    # ======================================================
+    # EVALUATION
+    # ======================================================
     if st.button("Evaluate Risk"):
 
+        # -------------------------
+        # Protocol Risk
+        # -------------------------
         risk = calculate_risk_protocol(
             age,
             raw_fish,
@@ -347,46 +356,66 @@ if menu == "New Screening":
             us_mass
         )
 
-        # =====================================
-        # REAL ML PROBABILITY (AUTO MODEL)
-        # =====================================
+        # -------------------------
+        # ML Probability (SAFE)
+        # -------------------------
         record_count = session.query(Assessment).count()
-        model = None
-        if record_count >= 5:
-            model = train_ml_model(record_count)
-        
+        model = train_ml_model(record_count) if record_count >= 5 else None
+
+        probability = None
+
         if model is not None:
-        
+
             X_new = pd.DataFrame([{
                 "age": age,
                 "red_flags": red_flags,
                 "ca19_9": ca19_9
             }])
-        
-            probability = model.predict_proba(X_new)[0][1]
-        
-            st.metric(
-                "CCA Probability (ML Model)",
-                f"{probability:.2%}"
-            )
-        # ===== Clinical Reasoning =====
-        coef = model.coef_[0]
-        features = ["Age", "Red Flags", "CA19-9"]
-        
-        impact = pd.DataFrame({
-            "Feature": features,
-            "Impact": coef * X_new.iloc[0]
-        }).sort_values("Impact", ascending=False)
-        
-        st.markdown("### AI Clinical Reasoning")
-        
-        for _, row in impact.head(3).iterrows():
-            if row["Impact"] > 0:
-                st.write(f"• {row['Feature']} increased risk")
+
+            try:
+                probability = model.predict_proba(X_new)[0][1]
+
+                st.metric(
+                    "CCA Probability (ML Model)",
+                    f"{probability:.2%}"
+                )
+
+            except Exception:
+                st.warning("Model prediction unavailable.")
+
         else:
             st.info("Model will activate after ≥5 patients.")
-        
-        # Follow-up scheduling
+
+        # ==================================================
+        # AI CLINICAL REASONING (SAFE VERSION)
+        # ==================================================
+        st.markdown("### AI Clinical Reasoning")
+
+        if model is not None and hasattr(model, "coef_") and probability is not None:
+
+            try:
+                coef = model.coef_[0]
+
+                features = ["Age", "Red Flags", "CA19-9"]
+
+                impact = pd.DataFrame({
+                    "Feature": features,
+                    "Impact": coef * X_new.iloc[0]
+                }).sort_values("Impact", ascending=False)
+
+                for _, row in impact.head(3).iterrows():
+                    if row["Impact"] > 0:
+                        st.write(f"• {row['Feature']} increased predicted risk")
+
+            except Exception:
+                st.info("Explainability unavailable (insufficient data variation).")
+
+        else:
+            st.caption("Clinical reasoning will appear once model stabilizes.")
+
+        # ==================================================
+        # FOLLOW-UP LOGIC
+        # ==================================================
         followup = None
         if risk == "Intermediate Risk":
             followup = datetime.utcnow() + timedelta(days=90)
@@ -409,6 +438,9 @@ if menu == "New Screening":
         ))
         session.commit()
 
+        # ==================================================
+        # CLINICAL INTERPRETATION
+        # ==================================================
         st.markdown("---")
         st.markdown("### Clinical Interpretation")
 
@@ -424,28 +456,16 @@ if menu == "New Screening":
         st.info(interpret_map[risk])
 
         if risk == "High Suspicion":
+
             st.error("High Suspicion of CCA")
             st.write("### Recommended Action:")
             st.write("• Urgent hepatobiliary referral")
             st.write("• Contrast-enhanced CT or MRI")
             st.write("• Multidisciplinary tumor board evaluation")
 
-        elif risk == "Intermediate Risk":
-            st.warning("Intermediate Risk")
-            st.write("### Recommended Action:")
-            st.write("• Ultrasound within 3 months")
-            st.write("• Repeat CA19-9")
-            st.write("• Monitor liver enzymes")
-
-        else:
-            st.success("Low Risk")
-            st.write("### Recommended Action:")
-            st.write("• Annual surveillance")
-            st.write("• Lifestyle modification")
-
-        # PDF Referral for High Suspicion
-        if risk == "High Suspicion":
-
+            # -------------------------
+            # PDF Referral
+            # -------------------------
             temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
             doc = SimpleDocTemplate(temp.name)
             styles = getSampleStyleSheet()
@@ -468,7 +488,20 @@ if menu == "New Screening":
                     mime="application/pdf"
                 )
 
-        st.caption("This tool supports clinical decision-making and does not replace physician judgment.")
+        elif risk == "Intermediate Risk":
+            st.warning("Intermediate Risk")
+            st.write("• Ultrasound within 3 months")
+            st.write("• Repeat CA19-9")
+            st.write("• Monitor liver enzymes")
+
+        else:
+            st.success("Low Risk")
+            st.write("• Annual surveillance")
+            st.write("• Lifestyle modification")
+
+        st.caption(
+            "This tool supports clinical decision-making and does not replace physician judgment."
+        )
 # ==========================================================
 # CLINICAL SUMMARY REPORT
 # ==========================================================
