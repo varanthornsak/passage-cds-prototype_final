@@ -629,18 +629,23 @@ elif menu == "Clinical Protocol Guide":
 # ==========================================================
 # AI ANALYTICS – LOGISTIC REGRESSION MODEL (FINAL STABLE)
 # ==========================================================
-meta = get_model_metadata()
 
-st.info(
-f"""
+elif menu == "AI Analytics":
+
+    st.header("AI Model Analytics (PASSAGE-CDS)")
+
+    # -------------------------
+    # Model metadata
+    # -------------------------
+    meta = get_model_metadata()
+
+    st.info(
+        f"""
 Model Version: {meta['model_version']}
 Training Samples: {meta['training_samples']}
 Last Trained: {meta['last_trained']}
 """
-)
-elif menu == "AI Analytics":
-
-    st.header("AI Model Analytics (PASSAGE-CDS)")
+    )
 
     # -------------------------
     # Safety checks
@@ -654,7 +659,6 @@ elif menu == "AI Analytics":
     if len(records) < 5:
         st.warning("Need at least 5 records for model training.")
         st.stop()
-
     # -------------------------
     # Dataset preparation
     # -------------------------
