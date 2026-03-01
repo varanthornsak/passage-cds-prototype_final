@@ -16,21 +16,21 @@ import tempfile
 import bcrypt
 # ===== SAFE ML IMPORT =====
 ML_AVAILABLE = True
+
 try:
     import numpy as np
     import matplotlib.pyplot as plt
     plt.ioff()
+
     from sklearn.linear_model import LogisticRegression
-    try:
-    import numpy as np
-    import matplotlib.pyplot as plt
-    plt.ioff()
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import roc_curve, auc, confusion_matrix, brier_score_loss
+    from sklearn.metrics import (
+        roc_curve,
+        auc,
+        confusion_matrix,
+        brier_score_loss
+    )
     from sklearn.model_selection import train_test_split
-except Exception:
-    ML_AVAILABLE = False
-    from sklearn.model_selection import train_test_split
+
 except Exception:
     ML_AVAILABLE = False
 # ==========================================================
@@ -551,156 +551,162 @@ elif menu == "AI Analytics":
         st.info("Check requirements.txt and rebuild environment.")
         st.stop()
 
-    st.header("AI Model Analytics (PASSAGE-CDS)")
-
     records = session.query(Assessment).all()
 
     if len(records) < 5:
         st.warning("Need at least 5 records for model training.")
-    else:
+        st.stop()
 
-        # ==========================
-        # Dataset preparation
-        # ==========================
-        df = pd.DataFrame([{
-            "age": r.age,
-            "red_flags": r.red_flags,
-            "ca19_9": r.ca19_9,
-            "target": 1 if r.risk_level=="High Suspicion" else 0
-        } for r in records])
+    # ==========================
+    # Dataset preparation
+    # ==========================
+    df = pd.DataFrame([{
+        "age": r.age,
+        "red_flags": r.red_flags,
+        "ca19_9": r.ca19_9,
+        "target": 1 if r.risk_level == "High Suspicion" else 0
+    } for r in records])
 
-        X = df[["age","red_flags","ca19_9"]]
-        y = df["target"]
+    X = df[["age", "red_flags", "ca19_9"]]
+    y = df["target"]
 
-        # ==========================
-        # Train/Test split
-        # ==========================
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=42
-        )
+    # ==========================
+    # Train/Test split
+    # ==========================
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42
+    )
 
-        model = LogisticRegression()
-        model.fit(X_train, y_train)
+    model = LogisticRegression(max_iter=1000)
+    model.fit(X_train, y_train)
 
-        # ==========================
-        # Probability prediction
-        # ==========================
-        y_prob = model.predict_proba(X_test)[:,1]
+    # ==========================
+    # Probability prediction
+    # ==========================
+    y_prob = model.predict_proba(X_test)[:, 1]
 
-        # ==========================
-        # ROC + AUC
-        # ==========================
-        fpr, tpr, _ = roc_curve(y_test, y_prob)
-        roc_auc = auc(fpr, tpr)
+    # ==========================
+    # ROC + AUC
+    # ==========================
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    roc_auc = auc(fpr, tpr)
 
-        fig = plt.figure()
-        plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
-        plt.plot([0,1],[0,1],'--')
-        plt.xlabel("False Positive Rate")
-        plt.ylabel("True Positive Rate")
-        plt.legend()
+    fig = plt.figure()
+    plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
+    plt.plot([0, 1], [0, 1], "--")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.legend()
 
-        st.pyplot(fig)
+    st.pyplot(fig)
+    st.metric("Model AUC", round(roc_auc, 3))
 
-        st.metric("Model AUC", round(roc_auc,3))
+    # ==========================
+    # Model coefficients
+    # ==========================
+    coef_df = pd.DataFrame({
+        "Feature": X.columns,
+        "Coefficient": model.coef_[0]
+    })
 
-        # ==========================
-        # Model coefficients
-        # ==========================
-        coef_df = pd.DataFrame({
-            "Feature": X.columns,
-            "Coefficient": model.coef_[0]
-        })
+    st.subheader("Model Explainability (Logistic Coefficients)")
+    st.dataframe(coef_df, use_container_width=True)
 
-        st.subheader("Model Explainability (Logistic Coefficients)")
-        st.dataframe(coef_df, use_container_width=True)
+    # ==========================
+    # Population distribution
+    # ==========================
+    st.subheader("Population Risk Probability Distribution")
 
-        # ==========================
-        # Population risk distribution
-        # ==========================
-        st.subheader("Population Risk Probability Distribution")
+    probs_all = model.predict_proba(X)[:, 1]
 
-        probs_all = model.predict_proba(X)[:,1]
+    fig2 = plt.figure()
+    plt.hist(probs_all, bins=10)
+    plt.xlabel("Predicted Probability")
+    plt.ylabel("Patients")
 
-        fig2 = plt.figure()
-        plt.hist(probs_all, bins=10)
-        plt.xlabel("Predicted Probability")
-        plt.ylabel("Patients")
+    st.pyplot(fig2)
 
-        st.pyplot(fig2)
+    st.success("Model training completed successfully.")
 
-        st.success("Model training completed successfully.")
-        # ==========================================================
-        # CLINICAL AI VALIDATION LAYER
-        # ==========================================================
-        
-        st.markdown("---")
-        st.header("Clinical Model Validation")
-        # ===============================
-        # Sensitivity / Specificity
-        # ===============================
-        st.subheader("Diagnostic Performance")
-        
-        y_pred = (y_prob >= 0.5).astype(int)
-        
-        cm = confusion_matrix(y_test, y_pred)
-        
+    # ==========================================================
+    # CLINICAL AI VALIDATION LAYER
+    # ==========================================================
+
+    st.markdown("---")
+    st.header("Clinical Model Validation")
+
+    # --------------------------
+    # Sensitivity / Specificity
+    # --------------------------
+    st.subheader("Diagnostic Performance")
+
+    y_pred = (y_prob >= 0.5).astype(int)
+
+    cm = confusion_matrix(y_test, y_pred)
+
+    if cm.shape == (2, 2):
         tn, fp, fn, tp = cm.ravel()
-        
-        sensitivity = tp / (tp + fn) if (tp+fn) > 0 else 0
-        specificity = tn / (tn + fp) if (tn+fp) > 0 else 0
-        
-        c1, c2 = st.columns(2)
-        c1.metric("Sensitivity (Recall)", f"{sensitivity:.2f}")
-        c2.metric("Specificity", f"{specificity:.2f}")
-        
-        # ===============================
-        # Calibration Curve
-        # ===============================
-        st.subheader("Calibration Curve (Model Reliability)")
-        
-        bins = pd.qcut(y_prob, q=5, duplicates="drop")
-        
-        calibration_df = pd.DataFrame({
-            "prob": y_prob,
-            "actual": y_test,
-            "bin": bins
-        })
-        
-        calibration = calibration_df.groupby("bin").mean()
-        
+        sensitivity = tp/(tp+fn) if (tp+fn)>0 else 0
+        specificity = tn/(tn+fp) if (tn+fp)>0 else 0
+    else:
+        sensitivity = 0
+        specificity = 0
+
+    c1, c2 = st.columns(2)
+    c1.metric("Sensitivity (Recall)", f"{sensitivity:.2f}")
+    c2.metric("Specificity", f"{specificity:.2f}")
+
+    # --------------------------
+    # Calibration Curve
+    # --------------------------
+    st.subheader("Calibration Curve (Model Reliability)")
+
+    cal_df = pd.DataFrame({
+        "prob": y_prob,
+        "actual": y_test
+    })
+
+    try:
+        cal_df["bin"] = pd.qcut(cal_df["prob"], q=5, duplicates="drop")
+        calibration = cal_df.groupby("bin").mean(numeric_only=True)
+
         fig_cal = plt.figure()
         plt.plot(calibration["prob"], calibration["actual"], marker="o")
         plt.plot([0,1],[0,1],'--')
         plt.xlabel("Predicted Probability")
         plt.ylabel("Observed Frequency")
-        plt.title("Calibration Curve")
-        
+
         st.pyplot(fig_cal)
-        
+
         brier = brier_score_loss(y_test, y_prob)
         st.metric("Brier Score (Lower is better)", round(brier,3))
-        
-        # ===============================
-        # Clinical Explainability
-        # ===============================
-        st.subheader("Clinical Explainability (Feature Impact)")
-        
-        coef_df["Odds Ratio"] = np.exp(coef_df["Coefficient"])
-        
-        st.dataframe(coef_df[["Feature","Coefficient","Odds Ratio"]],
-                     use_container_width=True)
-        
-        st.info("""
-        Interpretation Guide:
-        
-        • Odds Ratio > 1 → increases CCA probability  
-        • Odds Ratio < 1 → protective association  
-        • Larger magnitude = stronger clinical influence
-        
-        This explanation is derived from Logistic Regression coefficients
-        and is interpretable for clinical decision-making.
-        """)
+
+    except Exception:
+        st.warning("Not enough probability variation for calibration curve.")
+
+    # --------------------------
+    # Clinical Explainability
+    # --------------------------
+    st.subheader("Clinical Explainability (Feature Impact)")
+
+    explain_df = coef_df.copy()
+    explain_df["Odds Ratio"] = np.exp(explain_df["Coefficient"])
+
+    st.dataframe(
+        explain_df[["Feature", "Coefficient", "Odds Ratio"]],
+        use_container_width=True
+    )
+
+    st.info("""
+Interpretation Guide:
+
+• Odds Ratio > 1 → increases CCA probability  
+• Odds Ratio < 1 → protective association  
+• Larger magnitude = stronger clinical influence  
+
+This explanation derives from Logistic Regression
+and is clinically interpretable.
+""")
 # ==========================================================
 # AUDIT LOG (Admin only)
 # ==========================================================
