@@ -313,6 +313,8 @@ if menu == "New Screening":
     # -------------------------
     with col1:
         patient_name = st.text_input("Patient Name")
+        # persist value across reruns
+        st.session_state["patient_name"] = patient_name
         age = st.number_input("Age", 20, 100)
 
         st.subheader("Epidemiologic Risk")
@@ -455,13 +457,46 @@ if menu == "New Screening":
 
         st.info(interpret_map[risk])
 
+        # PDF Referral for High Suspicion
         if risk == "High Suspicion":
-
-            st.error("High Suspicion of CCA")
-            st.write("### Recommended Action:")
-            st.write("• Urgent hepatobiliary referral")
-            st.write("• Contrast-enhanced CT or MRI")
-            st.write("• Multidisciplinary tumor board evaluation")
+        
+            safe_patient = st.session_state.get("patient_name", "Unknown")
+        
+            temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        
+            doc = SimpleDocTemplate(temp.name)
+            styles = getSampleStyleSheet()
+            elements = []
+        
+            elements.append(
+                Paragraph("Cholangiocarcinoma Referral Letter", styles["Title"])
+            )
+            elements.append(Spacer(1, 0.3 * inch))
+            elements.append(
+                Paragraph(f"Patient: {safe_patient}", styles["Normal"])
+            )
+            elements.append(
+                Paragraph(f"Age: {age}", styles["Normal"])
+            )
+            elements.append(
+                Paragraph("Risk Classification: HIGH SUSPICION", styles["Normal"])
+            )
+            elements.append(
+                Paragraph(
+                    "Recommendation: Urgent hepatobiliary evaluation.",
+                    styles["Normal"]
+                )
+            )
+        
+            doc.build(elements)
+        
+            with open(temp.name, "rb") as f:
+                st.download_button(
+                    "Download Referral PDF",
+                    f,
+                    file_name="CCA_Referral.pdf",
+                    mime="application/pdf"
+                )
 
             # -------------------------
             # PDF Referral
