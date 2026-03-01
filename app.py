@@ -151,7 +151,14 @@ if "postgresql" in DATABASE_URL:
     st.sidebar.caption("Database: PostgreSQL (Production)")
 else:
     st.sidebar.caption("Database: Local Development Mode")
+# ==========================================================
+# SAFE SESSION VARIABLES (prevent rerun crash)
+# ==========================================================
 
+if "patient_name" not in st.session_state:
+    st.session_state.patient_name = ""
+
+safe_patient_name = st.session_state.patient_name
 # ==========================================================
 # RISK ENGINE
 # ==========================================================
@@ -313,8 +320,9 @@ if menu == "New Screening":
     # -------------------------
     with col1:
         patient_name = st.text_input("Patient Name")
-        # persist value across reruns
-        st.session_state["patient_name"] = patient_name
+        # persist across rerun
+        st.session_state.patient_name = patient_name
+        safe_patient_name = patient_name
         age = st.number_input("Age", 20, 100)
 
         st.subheader("Epidemiologic Risk")
@@ -473,7 +481,7 @@ if menu == "New Screening":
             )
             elements.append(Spacer(1, 0.3 * inch))
             elements.append(
-                Paragraph(f"Patient: {safe_patient}", styles["Normal"])
+                Paragraph(f"Patient: {safe_patient_name}", styles["Normal"])
             )
             elements.append(
                 Paragraph(f"Age: {age}", styles["Normal"])
@@ -508,7 +516,7 @@ if menu == "New Screening":
 
             elements.append(Paragraph("Cholangiocarcinoma Referral Letter", styles["Title"]))
             elements.append(Spacer(1, 0.3 * inch))
-            elements.append(Paragraph(f"Patient: {patient_name}", styles["Normal"]))
+            elements.append(Paragraph(f"Patient: {safe_patient_name}", styles["Normal"]))
             elements.append(Paragraph(f"Age: {age}", styles["Normal"]))
             elements.append(Paragraph("Risk Classification: HIGH SUSPICION", styles["Normal"]))
             elements.append(Paragraph("Recommendation: Urgent hepatobiliary evaluation.", styles["Normal"]))
@@ -553,7 +561,7 @@ if st.button("Generate Clinical AI Report"):
     elements.append(Paragraph("PASSAGE Clinical AI Summary", styles["Title"]))
     elements.append(Spacer(1,12))
 
-    elements.append(Paragraph(f"Patient: {patient_name}", styles["Normal"]))
+    elements.append(Paragraph(f"Patient: {safe_patient_name}", styles["Normal"]))
     elements.append(Paragraph(f"Risk Level: {risk}", styles["Normal"]))
     elements.append(Paragraph(f"Model Version: {meta['model_version']}", styles["Normal"]))
     elements.append(Paragraph(f"Training Samples: {meta['training_samples']}", styles["Normal"]))
