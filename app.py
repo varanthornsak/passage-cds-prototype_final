@@ -239,7 +239,7 @@ def train_ml_model(record_count):
 
 menu = st.sidebar.selectbox(
     "Navigation",
-    ["New Screening", "Recall List", "Dashboard", "Clinical Protocol Guide", "AI Analytics"]
+    ["New Screening", "Recall List", "Dashboard", "AI Analytics", "Clinical Protocol Guide"]
 )
 
 # ==========================================================
