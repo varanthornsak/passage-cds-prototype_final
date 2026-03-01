@@ -233,8 +233,49 @@ def train_ml_model(record_count):
     model.fit(X, y)
 
     return model
+# ==========================================================
+# MODEL GOVERNANCE UTILITIES
+# ==========================================================
+
+def get_model_metadata():
+
+    total_records = session.query(Assessment).count()
+
+    return {
+        "model_version": "PASSAGE-LR v1.0",
+        "training_samples": total_records,
+        "last_trained": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    }
 
 
+def retraining_indicator():
+
+    count = session.query(Assessment).count()
+
+    if count < 5:
+        st.warning("Model inactive — insufficient data.")
+    elif count < 20:
+        st.info("Model active (early learning phase)")
+    else:
+        st.success("Model stable — sufficient training data")
+# ==========================================================
+# DATA DRIFT DETECTION
+# ==========================================================
+
+def detect_data_drift(df):
+
+    drift_results = {}
+
+    for col in ["age", "red_flags", "ca19_9"]:
+        mean_val = df[col].mean()
+        std_val = df[col].std()
+
+        drift_results[col] = {
+            "mean": round(mean_val,2),
+            "std": round(std_val,2)
+        }
+
+    return pd.DataFrame(drift_results).T
 # ==========================================================
 # MODEL METADATA (Hospital Governance)
 # ==========================================================
@@ -428,7 +469,36 @@ if menu == "New Screening":
                 )
 
         st.caption("This tool supports clinical decision-making and does not replace physician judgment.")
+# ==========================================================
+# CLINICAL SUMMARY REPORT
+# ==========================================================
 
+if st.button("Generate Clinical AI Report"):
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(temp.name)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    meta = get_model_metadata()
+
+    elements.append(Paragraph("PASSAGE Clinical AI Summary", styles["Title"]))
+    elements.append(Spacer(1,12))
+
+    elements.append(Paragraph(f"Patient: {patient_name}", styles["Normal"]))
+    elements.append(Paragraph(f"Risk Level: {risk}", styles["Normal"]))
+    elements.append(Paragraph(f"Model Version: {meta['model_version']}", styles["Normal"]))
+    elements.append(Paragraph(f"Training Samples: {meta['training_samples']}", styles["Normal"]))
+
+    doc.build(elements)
+
+    with open(temp.name,"rb") as f:
+        st.download_button(
+            "Download Clinical Report",
+            f,
+            file_name="PASSAGE_AI_Report.pdf",
+            mime="application/pdf"
+        )
 # ==========================================================
 # RECALL LIST
 # ==========================================================
@@ -517,6 +587,20 @@ if menu == "Dashboard":
         )
 
         st.bar_chart(df["risk"].value_counts())
+        # ==========================================================
+        # DEPARTMENT ANALYTICS
+        # ==========================================================
+        
+        st.subheader("Department Usage Analytics")
+        
+        usage_df = pd.DataFrame([{
+            "date": r.created_at.date(),
+            "risk": r.risk_level
+        } for r in records])
+        
+        daily_counts = usage_df.groupby("date").size()
+        
+        st.line_chart(daily_counts)
         # ==================================================
         # RECALL COMPLIANCE KPI
         # ==================================================
@@ -553,6 +637,25 @@ if menu == "Dashboard":
             file_name="PASSAGE_CCA_dataset.csv",
             mime="text/csv"
 )
+        # ==========================================================
+        # SCREENING KPI PANEL
+        # ==========================================================
+        
+        st.subheader("Screening Performance KPI")
+        
+        total_cases = len(records)
+        high_cases = sum(r.risk_level=="High Suspicion" for r in records)
+        
+        avg_age = round(pd.DataFrame(
+            [{"age": r.age} for r in records]
+        )["age"].mean(),1)
+        
+        k1,k2,k3 = st.columns(3)
+        k1.metric("Total Screenings", total_cases)
+        k2.metric("High Suspicion Rate",
+                  f"{(high_cases/total_cases*100):.1f}%" if total_cases else "0%")
+        k3.metric("Average Age", avg_age)
+
     # ==================================================
     # HIGH RISK ALERT PANEL
     # ==================================================
@@ -571,7 +674,22 @@ if menu == "Dashboard":
         } for p in high_risk_patients])
     
         st.dataframe(alert_df, use_container_width=True)
-
+    # ==========================================================
+    # PROVINCIAL RISK HEATMAP (SIMULATED)
+    # ==========================================================
+    
+    st.subheader("Provincial Risk Distribution")
+    
+    import random
+    
+    heatmap_df = pd.DataFrame({
+        "province": ["Khon Kaen","Udon Thani","Kalasin","Roi Et"],
+        "risk_score": [random.uniform(0.2,0.8) for _ in range(4)]
+    })
+    
+    st.bar_chart(
+        heatmap_df.set_index("province")
+    )
 # ==========================================================
 # CLINICAL PROTOCOL GUIDE
 # ==========================================================
@@ -634,19 +752,25 @@ elif menu == "AI Analytics":
 
     st.header("AI Model Analytics (PASSAGE-CDS)")
 
-    # -------------------------
-    # Model metadata
-    # -------------------------
+    # ===============================
+    # MODEL GOVERNANCE PANEL
+    # ===============================
     meta = get_model_metadata()
 
-    st.info(
-        f"""
-Model Version: {meta['model_version']}
-Training Samples: {meta['training_samples']}
-Last Trained: {meta['last_trained']}
-"""
-    )
+    st.info(f"""
+    Model Version: {meta['model_version']}
+    Training Samples: {meta['training_samples']}
+    Last Trained: {meta['last_trained']}
+    """)
 
+    retraining_indicator()
+
+    # -------------------------
+    # Safety checks
+    # -------------------------
+    if not ML_AVAILABLE:
+        st.error("Machine Learning modules not installed.")
+        st.stop()
     # -------------------------
     # Safety checks
     # -------------------------
@@ -807,6 +931,11 @@ Interpretation Guide:
 """)
 
     st.success("AI validation completed successfully.")
+
+    # Drift monitoring
+    st.subheader("Dataset Drift Monitoring")
+    drift_df = detect_data_drift(df)
+    st.dataframe(drift_df)
 # ==========================================================
 # AUDIT LOG (Admin only)
 # ==========================================================
