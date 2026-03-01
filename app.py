@@ -745,32 +745,12 @@ elif menu == "Clinical Protocol Guide":
     })
 
 # ==========================================================
-# AI ANALYTICS – LOGISTIC REGRESSION MODEL (FINAL STABLE)
+# AI ANALYTICS – LOGISTIC REGRESSION MODEL (FINAL SAFE)
 # ==========================================================
-
 elif menu == "AI Analytics":
 
     st.header("AI Model Analytics (PASSAGE-CDS)")
 
-    # ===============================
-    # MODEL GOVERNANCE PANEL
-    # ===============================
-    meta = get_model_metadata()
-
-    st.info(f"""
-    Model Version: {meta['model_version']}
-    Training Samples: {meta['training_samples']}
-    Last Trained: {meta['last_trained']}
-    """)
-
-    retraining_indicator()
-
-    # -------------------------
-    # Safety checks
-    # -------------------------
-    if not ML_AVAILABLE:
-        st.error("Machine Learning modules not installed.")
-        st.stop()
     # -------------------------
     # Safety checks
     # -------------------------
@@ -783,6 +763,7 @@ elif menu == "AI Analytics":
     if len(records) < 5:
         st.warning("Need at least 5 records for model training.")
         st.stop()
+
     # -------------------------
     # Dataset preparation
     # -------------------------
@@ -793,16 +774,11 @@ elif menu == "AI Analytics":
         "target": 1 if r.risk_level == "High Suspicion" else 0
     } for r in records])
 
-    # prevent single-class crash
-    if df["target"].nunique() < 2:
-        st.warning("Model requires both outcome classes.")
-        st.stop()
-
     X = df[["age", "red_flags", "ca19_9"]]
     y = df["target"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
+        X, y, test_size=0.3, random_state=42
     )
 
     # -------------------------
@@ -811,6 +787,14 @@ elif menu == "AI Analytics":
     model = LogisticRegression(max_iter=1000)
     model.fit(X_train, y_train)
 
+    # ===== MODEL SAFETY CHECK =====
+    if model is None or not hasattr(model, "coef_"):
+        st.warning("Model not available.")
+        st.stop()
+
+    # -------------------------
+    # Probability prediction
+    # -------------------------
     y_prob = model.predict_proba(X_test)[:, 1]
 
     # -------------------------
@@ -827,23 +811,27 @@ elif menu == "AI Analytics":
     plt.legend()
 
     st.pyplot(fig)
-    plt.close(fig)
-
     st.metric("Model AUC", round(roc_auc, 3))
 
     # -------------------------
-    # Model Explainability
+    # Explainability (SAFE)
     # -------------------------
+    coef = getattr(model, "coef_", None)
+
+    if coef is None:
+        st.warning("Model coefficients unavailable.")
+        st.stop()
+
     coef_df = pd.DataFrame({
         "Feature": X.columns,
-        "Coefficient": model.coef_[0]
+        "Coefficient": coef[0]
     })
 
     st.subheader("Model Explainability")
     st.dataframe(coef_df, use_container_width=True)
 
     # -------------------------
-    # Population Distribution
+    # Population distribution
     # -------------------------
     st.subheader("Population Risk Distribution")
 
@@ -855,39 +843,35 @@ elif menu == "AI Analytics":
     plt.ylabel("Patients")
 
     st.pyplot(fig2)
-    plt.close(fig2)
 
     # =====================================================
     # CLINICAL VALIDATION
     # =====================================================
-
     st.markdown("---")
     st.header("Clinical Model Validation")
 
-    # -------------------------
-    # Sensitivity / Specificity
-    # -------------------------
     y_pred = (y_prob >= 0.5).astype(int)
+    cm = confusion_matrix(y_test, y_pred)
 
-    cm = confusion_matrix(y_test, y_pred, labels=[0,1])
-
-    tn, fp, fn, tp = cm.ravel()
-
-    sensitivity = tp/(tp+fn) if (tp+fn)>0 else 0
-    specificity = tn/(tn+fp) if (tn+fp)>0 else 0
+    if cm.shape == (2, 2):
+        tn, fp, fn, tp = cm.ravel()
+        sensitivity = tp/(tp+fn) if (tp+fn)>0 else 0
+        specificity = tn/(tn+fp) if (tn+fp)>0 else 0
+    else:
+        sensitivity, specificity = 0, 0
 
     c1, c2 = st.columns(2)
     c1.metric("Sensitivity", f"{sensitivity:.2f}")
     c2.metric("Specificity", f"{specificity:.2f}")
 
     # -------------------------
-    # Calibration Curve
+    # Calibration curve
     # -------------------------
     st.subheader("Calibration Curve")
 
     cal_df = pd.DataFrame({
         "prob": y_prob,
-        "actual": y_test.values
+        "actual": y_test
     })
 
     try:
@@ -901,7 +885,6 @@ elif menu == "AI Analytics":
         plt.ylabel("Observed Frequency")
 
         st.pyplot(fig_cal)
-        plt.close(fig_cal)
 
         brier = brier_score_loss(y_test, y_prob)
         st.metric("Brier Score", round(brier,3))
@@ -910,7 +893,7 @@ elif menu == "AI Analytics":
         st.warning("Calibration unavailable (insufficient variation).")
 
     # -------------------------
-    # Clinical Explainability
+    # Clinical Odds Ratio
     # -------------------------
     st.subheader("Clinical Explainability")
 
@@ -922,20 +905,7 @@ elif menu == "AI Analytics":
         use_container_width=True
     )
 
-    st.info("""
-Interpretation Guide:
-
-• Odds Ratio > 1 → increases CCA probability  
-• Odds Ratio < 1 → protective association  
-• Larger magnitude → stronger clinical influence
-""")
-
     st.success("AI validation completed successfully.")
-
-    # Drift monitoring
-    st.subheader("Dataset Drift Monitoring")
-    drift_df = detect_data_drift(df)
-    st.dataframe(drift_df)
 # ==========================================================
 # AUDIT LOG (Admin only)
 # ==========================================================
