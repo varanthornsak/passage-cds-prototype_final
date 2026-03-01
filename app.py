@@ -31,7 +31,7 @@ try:
     )
     from sklearn.model_selection import train_test_split
 
-except Exception:
+except Exception as e:
     ML_AVAILABLE = False
 # ==========================================================
 # CONFIG
@@ -545,6 +545,9 @@ elif menu == "AI Analytics":
 
     st.header("AI Model Analytics (PASSAGE-CDS)")
 
+    # -------------------------
+    # Safety checks
+    # -------------------------
     if not ML_AVAILABLE:
         st.error("Machine Learning modules not installed.")
         st.stop()
@@ -556,7 +559,7 @@ elif menu == "AI Analytics":
         st.stop()
 
     # -------------------------
-    # Dataset
+    # Dataset preparation
     # -------------------------
     df = pd.DataFrame([{
         "age": r.age,
@@ -565,13 +568,21 @@ elif menu == "AI Analytics":
         "target": 1 if r.risk_level == "High Suspicion" else 0
     } for r in records])
 
+    # prevent single-class crash
+    if df["target"].nunique() < 2:
+        st.warning("Model requires both outcome classes.")
+        st.stop()
+
     X = df[["age", "red_flags", "ca19_9"]]
     y = df["target"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42
+        X, y, test_size=0.3, random_state=42, stratify=y
     )
 
+    # -------------------------
+    # Train model
+    # -------------------------
     model = LogisticRegression(max_iter=1000)
     model.fit(X_train, y_train)
 
@@ -591,10 +602,12 @@ elif menu == "AI Analytics":
     plt.legend()
 
     st.pyplot(fig)
+    plt.close(fig)
+
     st.metric("Model AUC", round(roc_auc, 3))
 
     # -------------------------
-    # Coefficients
+    # Model Explainability
     # -------------------------
     coef_df = pd.DataFrame({
         "Feature": X.columns,
@@ -605,7 +618,7 @@ elif menu == "AI Analytics":
     st.dataframe(coef_df, use_container_width=True)
 
     # -------------------------
-    # Distribution
+    # Population Distribution
     # -------------------------
     st.subheader("Population Risk Distribution")
 
@@ -617,6 +630,7 @@ elif menu == "AI Analytics":
     plt.ylabel("Patients")
 
     st.pyplot(fig2)
+    plt.close(fig2)
 
     # =====================================================
     # CLINICAL VALIDATION
@@ -625,29 +639,30 @@ elif menu == "AI Analytics":
     st.markdown("---")
     st.header("Clinical Model Validation")
 
+    # -------------------------
     # Sensitivity / Specificity
+    # -------------------------
     y_pred = (y_prob >= 0.5).astype(int)
-    cm = confusion_matrix(y_test, y_pred)
 
-    if cm.shape == (2, 2):
-        tn, fp, fn, tp = cm.ravel()
-        sensitivity = tp/(tp+fn) if (tp+fn)>0 else 0
-        specificity = tn/(tn+fp) if (tn+fp)>0 else 0
-    else:
-        sensitivity, specificity = 0, 0
+    cm = confusion_matrix(y_test, y_pred, labels=[0,1])
+
+    tn, fp, fn, tp = cm.ravel()
+
+    sensitivity = tp/(tp+fn) if (tp+fn)>0 else 0
+    specificity = tn/(tn+fp) if (tn+fp)>0 else 0
 
     c1, c2 = st.columns(2)
     c1.metric("Sensitivity", f"{sensitivity:.2f}")
     c2.metric("Specificity", f"{specificity:.2f}")
 
     # -------------------------
-    # Calibration
+    # Calibration Curve
     # -------------------------
     st.subheader("Calibration Curve")
 
     cal_df = pd.DataFrame({
         "prob": y_prob,
-        "actual": y_test
+        "actual": y_test.values
     })
 
     try:
@@ -661,6 +676,7 @@ elif menu == "AI Analytics":
         plt.ylabel("Observed Frequency")
 
         st.pyplot(fig_cal)
+        plt.close(fig_cal)
 
         brier = brier_score_loss(y_test, y_prob)
         st.metric("Brier Score", round(brier,3))
@@ -669,7 +685,7 @@ elif menu == "AI Analytics":
         st.warning("Calibration unavailable (insufficient variation).")
 
     # -------------------------
-    # Odds Ratio
+    # Clinical Explainability
     # -------------------------
     st.subheader("Clinical Explainability")
 
@@ -681,7 +697,15 @@ elif menu == "AI Analytics":
         use_container_width=True
     )
 
-    st.success("AI validation completed.")
+    st.info("""
+Interpretation Guide:
+
+• Odds Ratio > 1 → increases CCA probability  
+• Odds Ratio < 1 → protective association  
+• Larger magnitude → stronger clinical influence
+""")
+
+    st.success("AI validation completed successfully.")
 # ==========================================================
 # AUDIT LOG (Admin only)
 # ==========================================================
