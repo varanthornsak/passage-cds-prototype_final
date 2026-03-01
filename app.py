@@ -233,13 +233,28 @@ def train_ml_model(record_count):
     model.fit(X, y)
 
     return model
+    # ==========================================================
+    # MODEL METADATA (AI Governance)
+    # ==========================================================
+    
+    def get_model_metadata():
+    
+        total_cases = session.query(Assessment).count()
+    
+        metadata = {
+            "model_version": "PASSAGE-CDS v1.0",
+            "training_samples": total_cases,
+            "last_trained": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        }
+    
+        return metadata
 # ==========================================================
 # MENU
 # ==========================================================
 
 menu = st.sidebar.selectbox(
     "Navigation",
-    ["New Screening", "Recall List", "Dashboard", "AI Analytics", "Clinical Protocol Guide"]
+    ["New Screening","Patient History", "Recall List", "Dashboard", "AI Analytics", "Clinical Protocol Guide"]
 )
 
 # ==========================================================
@@ -313,7 +328,20 @@ if menu == "New Screening":
                 "CCA Probability (ML Model)",
                 f"{probability:.2%}"
             )
+        # ===== Clinical Reasoning =====
+        coef = model.coef_[0]
+        features = ["Age", "Red Flags", "CA19-9"]
         
+        impact = pd.DataFrame({
+            "Feature": features,
+            "Impact": coef * X_new.iloc[0]
+        }).sort_values("Impact", ascending=False)
+        
+        st.markdown("### AI Clinical Reasoning")
+        
+        for _, row in impact.head(3).iterrows():
+            if row["Impact"] > 0:
+                st.write(f"• {row['Feature']} increased risk")
         else:
             st.info("Model will activate after ≥5 patients.")
         
@@ -425,7 +453,35 @@ if menu == "Recall List":
             "Follow-up Date": r.followup_date
         } for r in recalls])
         st.dataframe(df)
+# ==========================================================
+# PATIENT HISTORY
+# ==========================================================
 
+elif menu == "Patient History":
+
+    st.header("Patient Screening History")
+
+    name_search = st.text_input("Search Patient Name")
+
+    if name_search:
+
+        history = session.query(Assessment).filter(
+            Assessment.patient_name.contains(name_search)
+        ).order_by(Assessment.created_at).all()
+
+        if not history:
+            st.warning("No records found.")
+        else:
+            df = pd.DataFrame([{
+                "Date": h.created_at,
+                "Risk": h.risk_level,
+                "CA19-9": h.ca19_9,
+                "Red Flags": h.red_flags
+            } for h in history])
+
+            st.dataframe(df, use_container_width=True)
+
+            st.line_chart(df.set_index("Date")["CA19-9"])
 # ==========================================================
 # DASHBOARD
 # ==========================================================
@@ -461,6 +517,22 @@ if menu == "Dashboard":
         )
 
         st.bar_chart(df["risk"].value_counts())
+        # ==================================================
+        # RECALL COMPLIANCE KPI
+        # ==================================================
+        
+        due = session.query(Assessment).filter(
+            Assessment.followup_date != None,
+            Assessment.followup_date <= datetime.utcnow()
+        ).count()
+        
+        completed = session.query(Assessment).filter(
+            Assessment.followup_date == None
+        ).count()
+        
+        compliance = (completed / due * 100) if due > 0 else 0
+        
+        st.metric("Recall Compliance (%)", f"{compliance:.1f}%")
         st.markdown("---")
         st.subheader("Research Dataset Export")
         
@@ -481,7 +553,24 @@ if menu == "Dashboard":
             file_name="PASSAGE_CCA_dataset.csv",
             mime="text/csv"
 )
-
+    # ==================================================
+    # HIGH RISK ALERT PANEL
+    # ==================================================
+    
+    high_risk_patients = session.query(Assessment).filter(
+        Assessment.risk_level == "High Suspicion"
+    ).all()
+    
+    if high_risk_patients:
+        st.error(f"🚨 {len(high_risk_patients)} High-Risk Patients Require Action")
+    
+        alert_df = pd.DataFrame([{
+            "Patient": p.patient_name,
+            "CA19-9": p.ca19_9,
+            "Date": p.created_at
+        } for p in high_risk_patients])
+    
+        st.dataframe(alert_df, use_container_width=True)
 
 # ==========================================================
 # CLINICAL PROTOCOL GUIDE
@@ -540,7 +629,15 @@ elif menu == "Clinical Protocol Guide":
 # ==========================================================
 # AI ANALYTICS – LOGISTIC REGRESSION MODEL (FINAL STABLE)
 # ==========================================================
+meta = get_model_metadata()
 
+st.info(
+f"""
+Model Version: {meta['model_version']}
+Training Samples: {meta['training_samples']}
+Last Trained: {meta['last_trained']}
+"""
+)
 elif menu == "AI Analytics":
 
     st.header("AI Model Analytics (PASSAGE-CDS)")
