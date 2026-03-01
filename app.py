@@ -152,6 +152,18 @@ if "postgresql" in DATABASE_URL:
 else:
     st.sidebar.caption("Database: Local Development Mode")
 # ==========================================================
+# SAFE SESSION VARIABLES
+# ==========================================================
+
+if "patient_name" not in st.session_state:
+    st.session_state.patient_name = ""
+
+if "risk" not in st.session_state:
+    st.session_state.risk = ""
+
+safe_patient_name = st.session_state.patient_name
+safe_risk = st.session_state.risk
+# ==========================================================
 # SAFE SESSION VARIABLES (prevent rerun crash)
 # ==========================================================
 
@@ -365,7 +377,8 @@ if menu == "New Screening":
             us_dilation,
             us_mass
         )
-
+        st.session_state.risk = risk
+        safe_risk = risk
         # -------------------------
         # ML Probability (SAFE)
         # -------------------------
@@ -562,7 +575,7 @@ if st.button("Generate Clinical AI Report"):
     elements.append(Spacer(1,12))
 
     elements.append(Paragraph(f"Patient: {safe_patient_name}", styles["Normal"]))
-    elements.append(Paragraph(f"Risk Level: {risk}", styles["Normal"]))
+    elements.append(Paragraph(f"Risk Level: {safe_risk}", styles["Normal"]))
     elements.append(Paragraph(f"Model Version: {meta['model_version']}", styles["Normal"]))
     elements.append(Paragraph(f"Training Samples: {meta['training_samples']}", styles["Normal"]))
 
