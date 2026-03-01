@@ -233,21 +233,21 @@ def train_ml_model(record_count):
     model.fit(X, y)
 
     return model
-    # ==========================================================
-    # MODEL METADATA (AI Governance)
-    # ==========================================================
-    
-    def get_model_metadata():
-    
-        total_cases = session.query(Assessment).count()
-    
-        metadata = {
-            "model_version": "PASSAGE-CDS v1.0",
-            "training_samples": total_cases,
-            "last_trained": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-        }
-    
-        return metadata
+
+
+# ==========================================================
+# MODEL METADATA (Hospital Governance)
+# ==========================================================
+
+def get_model_metadata():
+
+    total_records = session.query(Assessment).count()
+
+    return {
+        "model_version": "PASSAGE-LR v1.0",
+        "training_samples": total_records,
+        "last_trained": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    }
 # ==========================================================
 # MENU
 # ==========================================================
